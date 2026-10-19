@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -90,6 +92,7 @@ func JSONDiffMapExceptID(
 	newObj, existingObj interface{},
 	resetFields bool,
 	source2priority map[string]int,
+	customFieldTypes ...map[string]string,
 ) (map[string]interface{}, error) {
 	diff := make(map[string]interface{})
 
@@ -130,6 +133,7 @@ func JSONDiffMapExceptID(
 				existingObject.Field(i).Interface(),
 				resetFields,
 				source2priority,
+				customFieldTypes...,
 			)
 			if err != nil {
 				return nil, fmt.Errorf(
@@ -196,7 +200,7 @@ func JSONDiffMapExceptID(
 			}
 
 		case reflect.Map:
-			err := addMapDiff(newObjectField, existingObjectField, jsonTag, hasPriority, diff)
+			err := addMapDiff(newObjectField, existingObjectField, jsonTag, hasPriority, diff, customFieldTypes...)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"error processing JsonDiffMapExceptID when processing map %s",
@@ -466,42 +470,60 @@ func addStructDiff(
 	return nil
 }
 
+// addMapDiff emits a partial custom_fields update: NetBox merges these keys with
+// existing values. Replaying omitted fields would send API read representations
+// (such as selection objects) back to an API expecting write representations.
 func addMapDiff(
 	newMap reflect.Value,
 	existingMap reflect.Value,
 	jsonTag string,
 	hasPriority bool,
 	diffMap map[string]interface{},
+	customFieldTypes ...map[string]string,
 ) error {
-	// If the new map is not set, we don't change anything
 	if !newMap.IsValid() {
 		return nil
 	}
-
-	// Go through all keys in new map, and check if they are in existing map
-	// If they are not, add them to diff map
 	mapsDiff := make(map[string]interface{})
 	for _, key := range newMap.MapKeys() {
-		// Keys have to be strings
-		if keyValue, ok := key.Interface().(string); ok {
-			if !existingMap.MapIndex(key).IsValid() {
-				mapsDiff[keyValue] = newMap.MapIndex(key).Interface()
-			} else if !reflect.DeepEqual(newMap.MapIndex(key).Interface(), existingMap.MapIndex(key).Interface()) {
-				if hasPriority {
-					mapsDiff[keyValue] = newMap.MapIndex(key).Interface()
-				}
-			}
-		} else {
+		name, ok := key.Interface().(string)
+		if !ok {
 			return fmt.Errorf("map keys have to be strings. Not implemented for anything else yet")
 		}
+		value := newMap.MapIndex(key).Interface()
+		var existing reflect.Value
+		if existingMap.IsValid() {
+			existing = existingMap.MapIndex(key)
+		}
+		fieldType := ""
+		if jsonTag == "custom_fields" && len(customFieldTypes) > 0 {
+			fieldType = customFieldTypes[0][name]
+			value = normalizeCustomFieldValue(value, fieldType)
+		}
+		if !existing.IsValid() {
+			// Preserve the existing priority rule: sources may add absent keys.
+			mapsDiff[name] = value
+		} else if hasPriority {
+			oldValue := existing.Interface()
+			if jsonTag == "custom_fields" {
+				oldValue = normalizeCustomFieldValue(oldValue, fieldType)
+			}
+			equal := reflect.DeepEqual(value, oldValue)
+			if jsonTag == "custom_fields" {
+				equal = customFieldValuesEqual(value, oldValue)
+			}
+			if !equal {
+				mapsDiff[name] = value
+			}
+		}
 	}
-
 	if len(mapsDiff) > 0 {
-		for _, key := range existingMap.MapKeys() {
-			if keyValue, ok := key.Interface().(string); ok {
-				if !newMap.MapIndex(key).IsValid() {
-					if !existingMap.MapIndex(key).IsNil() {
-						mapsDiff[keyValue] = sanitizeCustomFieldValue(existingMap.MapIndex(key).Interface())
+		// Other map fields retain their existing replacement semantics.
+		if jsonTag != "custom_fields" && existingMap.IsValid() {
+			for _, key := range existingMap.MapKeys() {
+				if name, ok := key.Interface().(string); ok && !newMap.MapIndex(key).IsValid() {
+					if value := existingMap.MapIndex(key).Interface(); value != nil {
+						mapsDiff[name] = value
 					}
 				}
 			}
@@ -511,25 +533,53 @@ func addMapDiff(
 	return nil
 }
 
-// sanitizeCustomFieldValue converts NetBox API read-format custom field values
-// to write-format. Object-type custom fields come back from the API as nested
-// objects (map with "id", "display", "url", etc.) but must be sent as just the
-// ID integer on write. Without this conversion, PATCH requests fail with:
-// "Cannot resolve keyword 'display' into field".
-func sanitizeCustomFieldValue(val interface{}) interface{} {
-	if m, ok := val.(map[string]interface{}); ok {
-		if id, hasID := m["id"]; hasID {
-			return id
+// Normalize only fields whose NetBox type is known. In particular, JSON fields
+// may legitimately contain value, label, or id keys and must remain intact.
+func normalizeCustomFieldValue(value interface{}, fieldType string) interface{} {
+	switch fieldType {
+	case "select":
+		if choice, ok := value.(map[string]interface{}); ok {
+			if raw, exists := choice["value"]; exists {
+				return raw
+			}
+		}
+	case "object":
+		if object, ok := value.(map[string]interface{}); ok {
+			if id, exists := object["id"]; exists {
+				return id
+			}
+		}
+	case "multiselect", "multiobject":
+		items := reflect.ValueOf(value)
+		if items.IsValid() && items.Kind() == reflect.Slice && !items.IsNil() {
+			itemType := "select"
+			if fieldType == "multiobject" {
+				itemType = "object"
+			}
+			normalized := make([]interface{}, items.Len())
+			for i := range normalized {
+				normalized[i] = normalizeCustomFieldValue(items.Index(i).Interface(), itemType)
+			}
+			// Both field types represent unordered selections.
+			sort.SliceStable(normalized, func(i, j int) bool {
+				left, _ := json.Marshal(normalized[i])
+				right, _ := json.Marshal(normalized[j])
+				return bytes.Compare(left, right) < 0
+			})
+			return normalized
 		}
 	}
-	if s, ok := val.([]interface{}); ok {
-		sanitized := make([]interface{}, len(s))
-		for i, item := range s {
-			sanitized[i] = sanitizeCustomFieldValue(item)
-		}
-		return sanitized
+	return value
+}
+
+func customFieldValuesEqual(left, right interface{}) bool {
+	if reflect.DeepEqual(left, right) {
+		return true
 	}
-	return val
+	// API numbers decode as float64, while source values may be Go integers.
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
 func addPrimaryDiff(

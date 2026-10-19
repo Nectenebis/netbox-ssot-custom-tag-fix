@@ -18,7 +18,7 @@ func (nbi *NetboxInventory) AddTag(ctx context.Context, newTag *objects.Tag) (*o
 	defer nbi.tagsLock.Unlock()
 	if _, ok := nbi.tagsIndexByName[newTag.Name]; ok {
 		oldTag := nbi.tagsIndexByName[newTag.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(newTag, oldTag, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newTag, oldTag)
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +57,7 @@ func (nbi *NetboxInventory) AddTenant(
 	defer nbi.tenantsLock.Unlock()
 	if _, ok := nbi.tenantsIndexByName[newTenant.Name]; ok {
 		oldTenant := nbi.tenantsIndexByName[newTenant.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(newTenant, oldTenant, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newTenant, oldTenant)
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +101,7 @@ func (nbi *NetboxInventory) AddSite(
 	defer nbi.sitesLock.Unlock()
 	if _, ok := nbi.sitesIndexByName[newSite.Name]; ok {
 		oldSite := nbi.sitesIndexByName[newSite.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(newSite, oldSite, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newSite, oldSite)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +140,7 @@ func (nbi *NetboxInventory) AddLocation(
 	defer nbi.locationsLock.Unlock()
 	if _, ok := nbi.locationsIndexByName[newLocation.Name]; ok {
 		oldLocation := nbi.locationsIndexByName[newLocation.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(newLocation, oldLocation, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newLocation, oldLocation)
 		if err != nil {
 			return nil, err
 		}
@@ -175,12 +175,9 @@ func (nbi *NetboxInventory) AddSiteGroup(
 	defer nbi.sitesLock.Unlock()
 	if _, ok := nbi.siteGroupsIndexByName[newSiteGroup.Name]; ok {
 		oldSiteGroup := nbi.siteGroupsIndexByName[newSiteGroup.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newSiteGroup,
-			oldSiteGroup,
-			false,
-			nbi.SourcePriority,
-		)
+			oldSiteGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -225,12 +222,9 @@ func (nbi *NetboxInventory) AddContactRole(
 	defer nbi.contactRolesLock.Unlock()
 	if _, ok := nbi.contactRolesIndexByName[newContactRole.Name]; ok {
 		oldContactRole := nbi.contactRolesIndexByName[newContactRole.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newContactRole,
-			oldContactRole,
-			false,
-			nbi.SourcePriority,
-		)
+			oldContactRole)
 		if err != nil {
 			return nil, err
 		}
@@ -274,12 +268,9 @@ func (nbi *NetboxInventory) AddContactGroup(
 	defer nbi.contactGroupsLock.Unlock()
 	if _, ok := nbi.contactGroupsIndexByName[newContactGroup.Name]; ok {
 		oldContactGroup := nbi.contactGroupsIndexByName[newContactGroup.Name]
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newContactGroup,
-			oldContactGroup,
-			false,
-			nbi.SourcePriority,
-		)
+			oldContactGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -325,7 +316,7 @@ func (nbi *NetboxInventory) AddContact(
 	if _, ok := nbi.contactsIndexByName[newContact.Name]; ok {
 		oldContact := nbi.contactsIndexByName[newContact.Name]
 		nbi.OrphanManager.RemoveItem(oldContact)
-		diffMap, err := utils.JSONDiffMapExceptID(newContact, oldContact, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newContact, oldContact)
 		if err != nil {
 			return nil, err
 		}
@@ -387,7 +378,7 @@ func (nbi *NetboxInventory) AddContactAssignment(
 	if _, ok := nbi.contactAssignmentsIndex[newCA.ModelType][newCA.ObjectID][newCA.Contact.ID][newCA.Role.ID]; ok {
 		oldCA := nbi.contactAssignmentsIndex[newCA.ModelType][newCA.ObjectID][newCA.Contact.ID][newCA.Role.ID]
 		nbi.OrphanManager.RemoveItem(oldCA)
-		diffMap, err := utils.JSONDiffMapExceptID(newCA, oldCA, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newCA, oldCA)
 		if err != nil {
 			return nil, err
 		}
@@ -485,7 +476,7 @@ func (nbi *NetboxInventory) AddClusterGroup(
 	if _, ok := nbi.clusterGroupsIndexByName[newCg.Name]; ok {
 		oldCg := nbi.clusterGroupsIndexByName[newCg.Name]
 		nbi.OrphanManager.RemoveItem(oldCg)
-		diffMap, err := utils.JSONDiffMapExceptID(newCg, oldCg, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newCg, oldCg)
 		if err != nil {
 			return nil, err
 		}
@@ -537,12 +528,9 @@ func (nbi *NetboxInventory) AddClusterType(
 	if _, ok := nbi.clusterTypesIndexByName[newClusterType.Name]; ok {
 		oldClusterType := nbi.clusterTypesIndexByName[newClusterType.Name]
 		nbi.OrphanManager.RemoveItem(oldClusterType)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newClusterType,
-			oldClusterType,
-			false,
-			nbi.SourcePriority,
-		)
+			oldClusterType)
 		if err != nil {
 			return nil, err
 		}
@@ -604,7 +592,7 @@ func (nbi *NetboxInventory) AddCluster(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldCluster := nbi.clustersIndexByName[newCluster.Name]
 		nbi.OrphanManager.RemoveItem(oldCluster)
-		diffMap, err := utils.JSONDiffMapExceptID(newCluster, oldCluster, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newCluster, oldCluster)
 		if err != nil {
 			return nil, err
 		}
@@ -655,12 +643,9 @@ func (nbi *NetboxInventory) AddDeviceRole(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldDeviceRole := nbi.deviceRolesIndexByName[newDeviceRole.Name]
 		nbi.OrphanManager.RemoveItem(oldDeviceRole)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newDeviceRole,
-			oldDeviceRole,
-			false,
-			nbi.SourcePriority,
-		)
+			oldDeviceRole)
 		if err != nil {
 			return nil, err
 		}
@@ -712,12 +697,9 @@ func (nbi *NetboxInventory) AddManufacturer(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldManufacturer := nbi.manufacturersIndexByName[newManufacturer.Name]
 		nbi.OrphanManager.RemoveItem(oldManufacturer)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newManufacturer,
-			oldManufacturer,
-			false,
-			nbi.SourcePriority,
-		)
+			oldManufacturer)
 		if err != nil {
 			return nil, err
 		}
@@ -767,12 +749,9 @@ func (nbi *NetboxInventory) AddDeviceType(
 	if _, ok := nbi.deviceTypesIndexByModel[newDeviceType.Model]; ok {
 		oldDeviceType := nbi.deviceTypesIndexByModel[newDeviceType.Model]
 		nbi.OrphanManager.RemoveItem(oldDeviceType)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newDeviceType,
-			oldDeviceType,
-			false,
-			nbi.SourcePriority,
-		)
+			oldDeviceType)
 		if err != nil {
 			return nil, err
 		}
@@ -823,12 +802,9 @@ func (nbi *NetboxInventory) AddPlatform(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldPlatform := nbi.platformsIndexByName[newPlatform.Name]
 		nbi.OrphanManager.RemoveItem(oldPlatform)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newPlatform,
-			oldPlatform,
-			false,
-			nbi.SourcePriority,
-		)
+			oldPlatform)
 		if err != nil {
 			return nil, err
 		}
@@ -893,7 +869,7 @@ func (nbi *NetboxInventory) AddDevice(
 			newDevice.AddTag(nbi.IgnoreDeviceTypeTag)
 		}
 
-		diffMap, err := utils.JSONDiffMapExceptID(newDevice, oldDevice, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newDevice, oldDevice)
 		if err != nil {
 			return nil, err
 		}
@@ -955,7 +931,7 @@ func (nbi *NetboxInventory) AddVirtualDeviceContext(
 	if _, ok := nbi.virtualDeviceContextsIndex[newVDC.Name][newVDC.Device.ID]; ok {
 		oldVDC := nbi.virtualDeviceContextsIndex[newVDC.Name][newVDC.Device.ID]
 		nbi.OrphanManager.RemoveItem(oldVDC)
-		diffMap, err := utils.JSONDiffMapExceptID(newVDC, oldVDC, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newVDC, oldVDC)
 		if err != nil {
 			return nil, err
 		}
@@ -1009,12 +985,9 @@ func (nbi *NetboxInventory) AddVlanGroup(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldVlanGroup := nbi.vlanGroupsIndexByName[newVlanGroup.Name]
 		nbi.OrphanManager.RemoveItem(oldVlanGroup)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newVlanGroup,
-			oldVlanGroup,
-			false,
-			nbi.SourcePriority,
-		)
+			oldVlanGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -1065,7 +1038,7 @@ func (nbi *NetboxInventory) AddVlan(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldVlan := nbi.vlansIndexByVlanGroupIDAndVID[newVlan.Group.ID][newVlan.Vid]
 		nbi.OrphanManager.RemoveItem(oldVlan)
-		diffMap, err := utils.JSONDiffMapExceptID(newVlan, oldVlan, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newVlan, oldVlan)
 		if err != nil {
 			return nil, err
 		}
@@ -1117,12 +1090,9 @@ func (nbi *NetboxInventory) AddInterface(
 	if _, ok := nbi.interfacesIndexByDeviceIDAndName[newInterface.Device.ID][newInterface.Name]; ok {
 		oldInterface := nbi.interfacesIndexByDeviceIDAndName[newInterface.Device.ID][newInterface.Name]
 		nbi.OrphanManager.RemoveItem(oldInterface)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newInterface,
-			oldInterface,
-			false,
-			nbi.SourcePriority,
-		)
+			oldInterface)
 		if err != nil {
 			return nil, err
 		}
@@ -1191,7 +1161,7 @@ func (nbi *NetboxInventory) AddVM(ctx context.Context, newVM *objects.VM) (*obje
 	}
 	if oldVM, ok := nbi.vmsIndexByNameAndClusterID[newVM.Name][newVMClusterID]; ok {
 		nbi.OrphanManager.RemoveItem(oldVM)
-		diffMap, err := utils.JSONDiffMapExceptID(newVM, oldVM, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newVM, oldVM)
 		if err != nil {
 			return nil, err
 		}
@@ -1247,12 +1217,9 @@ func (nbi *NetboxInventory) AddVMInterface(
 	if _, ok := nbi.vmInterfacesIndexByVMIdAndName[newVMInterface.VM.ID][newVMInterface.Name]; ok {
 		oldVMIface := nbi.vmInterfacesIndexByVMIdAndName[newVMInterface.VM.ID][newVMInterface.Name]
 		nbi.OrphanManager.RemoveItem(oldVMIface)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newVMInterface,
-			oldVMIface,
-			false,
-			nbi.SourcePriority,
-		)
+			oldVMIface)
 		if err != nil {
 			return nil, err
 		}
@@ -1329,12 +1296,9 @@ func (nbi *NetboxInventory) AddIPAddress(
 	if _, ok := nbi.ipAddressesIndex[objType][objName][ifaceName][indexKey]; ok {
 		oldIPAddress := nbi.ipAddressesIndex[objType][objName][ifaceName][indexKey]
 		nbi.OrphanManager.RemoveItem(oldIPAddress)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newIPAddress,
-			oldIPAddress,
-			false,
-			nbi.SourcePriority,
-		)
+			oldIPAddress)
 		if err != nil {
 			return nil, err
 		}
@@ -1438,12 +1402,9 @@ func (nbi *NetboxInventory) AddMACAddress(
 		oldMACAddress := nbi.macAddressesIndex[objType][objName][ifaceName][newMACAddress.MAC]
 		nbi.OrphanManager.RemoveItem(oldMACAddress)
 
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newMACAddress,
-			oldMACAddress,
-			false,
-			nbi.SourcePriority,
-		)
+			oldMACAddress)
 		if err != nil {
 			return nil, err
 		}
@@ -1527,7 +1488,7 @@ func (nbi *NetboxInventory) AddPrefix(
 	if _, ok := nbi.prefixesIndexByPrefix[newPrefix.Prefix][vrfID]; ok {
 		oldPrefix := nbi.prefixesIndexByPrefix[newPrefix.Prefix][vrfID]
 		nbi.OrphanManager.RemoveItem(oldPrefix)
-		diffMap, err := utils.JSONDiffMapExceptID(newPrefix, oldPrefix, false, nbi.SourcePriority)
+		diffMap, err := nbi.jsonDiffMapExceptID(newPrefix, oldPrefix)
 		if err != nil {
 			return nil, err
 		}
@@ -1579,12 +1540,9 @@ func (nbi *NetboxInventory) AddWirelessLAN(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldWirelessLan := nbi.wirelessLANsIndexBySSID[newWirelessLan.SSID]
 		nbi.OrphanManager.RemoveItem(oldWirelessLan)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newWirelessLan,
-			oldWirelessLan,
-			false,
-			nbi.SourcePriority,
-		)
+			oldWirelessLan)
 		if err != nil {
 			return nil, err
 		}
@@ -1635,12 +1593,9 @@ func (nbi *NetboxInventory) AddWirelessLANGroup(
 		// Remove id from orphan manager, because it still exists in the sources
 		oldWirelessLANGroup := nbi.wirelessLANGroupsIndexByName[newWirelessLANGroup.Name]
 		nbi.OrphanManager.RemoveItem(oldWirelessLANGroup)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newWirelessLANGroup,
-			oldWirelessLANGroup,
-			false,
-			nbi.SourcePriority,
-		)
+			oldWirelessLANGroup)
 		if err != nil {
 			return nil, err
 		}
@@ -1700,12 +1655,9 @@ func (nbi *NetboxInventory) AddVirtualDisk(
 	if _, ok := nbi.virtualDisksIndexByVMIDAndName[newVirtualDisk.VM.ID][newVirtualDisk.Name]; ok {
 		oldVirtualDisk := nbi.virtualDisksIndexByVMIDAndName[newVirtualDisk.VM.ID][newVirtualDisk.Name]
 		nbi.OrphanManager.RemoveItem(oldVirtualDisk)
-		diffMap, err := utils.JSONDiffMapExceptID(
+		diffMap, err := nbi.jsonDiffMapExceptID(
 			newVirtualDisk,
-			oldVirtualDisk,
-			false,
-			nbi.SourcePriority,
-		)
+			oldVirtualDisk)
 		if err != nil {
 			return nil, err
 		}

@@ -207,3 +207,19 @@ func findPrefixAcrossVRFs(vrfMap map[int]*objects.Prefix) (int, *objects.Prefix)
 	}
 	return 0, nil
 }
+
+// Snapshot field types under their own lock, since sources can create custom
+// fields concurrently. AddCustomField itself uses the metadata-free diff.
+func (nbi *NetboxInventory) jsonDiffMapExceptID(
+	newObj, existingObj interface{},
+) (map[string]interface{}, error) {
+	nbi.customFieldsLock.Lock()
+	fieldTypes := make(map[string]string, len(nbi.customFieldsIndexByName))
+	for name, field := range nbi.customFieldsIndexByName {
+		if field != nil {
+			fieldTypes[name] = field.Type.Value
+		}
+	}
+	nbi.customFieldsLock.Unlock()
+	return utils.JSONDiffMapExceptID(newObj, existingObj, false, nbi.SourcePriority, fieldTypes)
+}

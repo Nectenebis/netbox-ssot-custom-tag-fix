@@ -382,8 +382,6 @@ func TestMapAttributeDiff(t *testing.T) {
 				"custom_fields": map[string]interface{}{
 					constants.CustomFieldHostCPUCoresName: "10 cpu cores",
 					constants.CustomFieldHostMemoryName:   "10 GB",
-					"existing_tag1":                       "existing_tag1",
-					"existing_tag2":                       "existing_tag2",
 				},
 			},
 		},
@@ -435,8 +433,6 @@ func TestMapAttributeDiff(t *testing.T) {
 			expectedDiff: map[string]interface{}{
 				"custom_fields": map[string]interface{}{
 					constants.CustomFieldHostCPUCoresName: "5 cpu cores",
-					"existing_tag1":                       "existing_tag1",
-					"existing_tag2":                       "existing_tag2",
 				},
 			},
 		},
@@ -1383,172 +1379,116 @@ func TestExtractFieldsFromDiffMap(t *testing.T) {
 	}
 }
 
-func TestSanitizeCustomFieldValue(t *testing.T) {
+// The API preserves omitted custom fields, so none of their read-format values
+// should be replayed when only a managed source field changes.
+func TestCustomFieldsPartialPatch(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name string
-		val  interface{}
-		want interface{}
-	}{
-		{
-			name: "nil value passes through",
-			val:  nil,
-			want: nil,
-		},
-		{
-			name: "string value passes through",
-			val:  "hello",
-			want: "hello",
-		},
-		{
-			name: "int value passes through",
-			val:  42,
-			want: 42,
-		},
-		{
-			name: "bool value passes through",
-			val:  true,
-			want: true,
-		},
-		{
-			name: "nested object with id extracts id",
-			val: map[string]interface{}{
-				"id":      float64(5),
-				"display": "SiteName",
-				"url":     "https://netbox/api/dcim/sites/5/",
-				"name":    "SiteName",
-			},
-			want: float64(5),
-		},
-		{
-			name: "map without id passes through",
-			val: map[string]interface{}{
-				"key": "value",
-			},
-			want: map[string]interface{}{
-				"key": "value",
-			},
-		},
-		{
-			name: "multiobject array extracts ids",
-			val: []interface{}{
-				map[string]interface{}{
-					"id":      float64(4),
-					"display": "InterXion",
-					"url":     "https://netbox/api/dcim/sites/4/",
-					"name":    "InterXion",
-				},
-				map[string]interface{}{
-					"id":      float64(2),
-					"display": "LCL",
-					"url":     "https://netbox/api/dcim/sites/2/",
-					"name":    "LCL",
-				},
-			},
-			want: []interface{}{float64(4), float64(2)},
-		},
-		{
-			name: "empty array passes through",
-			val:  []interface{}{},
-			want: []interface{}{},
-		},
-		{
-			name: "mixed array sanitizes only objects with id",
-			val: []interface{}{
-				map[string]interface{}{
-					"id":      float64(1),
-					"display": "Site1",
-				},
-				"plain-string",
-				float64(42),
-			},
-			want: []interface{}{float64(1), "plain-string", float64(42)},
-		},
+	existing := map[string]interface{}{
+		"source":      "old-source",
+		"fond":        map[string]interface{}{"value": "future", "label": "Будущее"},
+		"environment": map[string]interface{}{"value": "test", "label": "Test"},
+		"multi":       []interface{}{map[string]interface{}{"value": "a", "label": "A"}},
+		"object":      map[string]interface{}{"id": float64(5), "display": "Site"},
+		"objects":     []interface{}{map[string]interface{}{"id": float64(6)}},
+		"json":        map[string]interface{}{"id": 7, "value": "literal", "label": "keep"},
+		"nullable":    nil,
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	diff := make(map[string]interface{})
+	err := addMapDiff(reflect.ValueOf(map[string]interface{}{"source": "new-source"}),
+		reflect.ValueOf(existing), "custom_fields", true, diff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]interface{}{"custom_fields": map[string]interface{}{"source": "new-source"}}
+	if !reflect.DeepEqual(diff, want) {
+		t.Fatalf("got %#v, want %#v", diff, want)
+	}
+}
+
+func TestCustomFieldTypedDiff(t *testing.T) {
+	t.Parallel()
+	jsonValue := map[string]interface{}{
+		"id": float64(7), "value": "future", "label": "literal",
+		"nested": []interface{}{map[string]interface{}{"id": float64(9)}},
+	}
+	cases := []struct {
+		name, fieldType     string
+		old, newValue, want interface{}
+		changed             bool
+	}{
+		{"select unchanged", "select", map[string]interface{}{"value": "future", "label": "Будущее"},
+			"future", nil, false},
+		{"select changed", "select", map[string]interface{}{"value": "future", "label": "Будущее"},
+			"evolution", "evolution", true},
+		{"select read representation", "select", "future",
+			map[string]interface{}{"value": "evolution", "label": "Эволюция"}, "evolution", true},
+		{"legacy selection", "select", "future", "future", nil, false},
+		{"multiselect unchanged unordered", "multiselect", []interface{}{
+			map[string]interface{}{"value": "b", "label": "B"}, map[string]interface{}{"value": "a", "label": "A"}},
+			[]string{"a", "b"}, nil, false},
+		{"multiselect changed", "multiselect", []interface{}{map[string]interface{}{"value": "a"}},
+			[]interface{}{map[string]interface{}{"value": "b", "label": "B"}}, []interface{}{"b"}, true},
+		{"multiselect cleared", "multiselect", []interface{}{map[string]interface{}{"value": "a"}},
+			[]string{}, []interface{}{}, true},
+		{"object unchanged", "object", map[string]interface{}{"id": float64(5), "display": "Site"}, 5, nil, false},
+		{"object changed", "object", float64(5), map[string]interface{}{"id": 6, "display": "Site"}, 6, true},
+		{"multiobject unchanged unordered", "multiobject", []interface{}{
+			map[string]interface{}{"id": float64(6)}, map[string]interface{}{"id": float64(5)}},
+			[]int{5, 6}, nil, false},
+		{"multiobject changed", "multiobject", []int{5},
+			[]interface{}{map[string]interface{}{"id": 6}}, []interface{}{6}, true},
+		{"json preserved", "json", nil, jsonValue, jsonValue, true},
+		{"json unchanged", "json", jsonValue, jsonValue, nil, false},
+		{"unknown type preserved", "", nil, jsonValue, jsonValue, true},
+		{"explicit clear", "select", "future", nil, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := sanitizeCustomFieldValue(tt.val)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("sanitizeCustomFieldValue() = %v, want %v", got, tt.want)
+			diff := map[string]interface{}{}
+			err := addMapDiff(reflect.ValueOf(map[string]interface{}{"field": tc.newValue}),
+				reflect.ValueOf(map[string]interface{}{"field": tc.old}), "custom_fields", true,
+				diff, map[string]string{"field": tc.fieldType})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.changed {
+				if len(diff) != 0 {
+					t.Fatalf("unexpected diff: %#v", diff)
+				}
+				return
+			}
+			want := map[string]interface{}{"custom_fields": map[string]interface{}{"field": tc.want}}
+			if !reflect.DeepEqual(diff, want) {
+				t.Fatalf("got %#v, want %#v", diff, want)
 			}
 		})
 	}
 }
 
-func TestAddMapDiffSanitizesExistingObjectTypeCustomFields(t *testing.T) {
+func TestCustomFieldsSourcePriorityAndClearing(t *testing.T) {
 	t.Parallel()
-	newMap := reflect.ValueOf(map[string]interface{}{
-		"source": "vcenter007",
-	})
-	existingMap := reflect.ValueOf(map[string]interface{}{
-		"source": "vcenter007",
-		"site_ref": map[string]interface{}{
-			"id":      float64(1),
-			"display": "LCL",
-			"url":     "https://netbox/api/dcim/sites/1/",
-		},
-	})
-	diffMap := make(map[string]interface{})
-
-	// Force a diff by changing source value
-	newMapWithDiff := reflect.ValueOf(map[string]interface{}{
-		"source": "vcenter008",
-	})
-	err := addMapDiff(newMapWithDiff, existingMap, "custom_fields", true, diffMap)
-	if err != nil {
-		t.Fatalf("addMapDiff() error = %v", err)
+	for _, priority := range []bool{true, false} {
+		old := reflect.ValueOf(map[string]interface{}{"source": "first", "orphan_last_seen": "yesterday"})
+		newValue := reflect.ValueOf(map[string]interface{}{"source": "second", "orphan_last_seen": nil, "source_id": "vm-42"})
+		diff := map[string]interface{}{}
+		if err := addMapDiff(newValue, old, "custom_fields", priority, diff); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]interface{}{"source_id": "vm-42"}
+		if priority {
+			want["source"] = "second"
+			want["orphan_last_seen"] = nil
+		}
+		if !reflect.DeepEqual(diff["custom_fields"], want) {
+			t.Fatalf("priority %v: %#v", priority, diff)
+		}
 	}
-	cf, ok := diffMap["custom_fields"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected custom_fields in diffMap")
-	}
-	// site_ref should be sanitized to just the ID, not the full nested object
-	siteRef := cf["site_ref"]
-	if siteRefMap, isMap := siteRef.(map[string]interface{}); isMap {
-		t.Errorf("site_ref should be sanitized to ID, got nested object: %v", siteRefMap)
-	}
-	if siteRef != float64(1) {
-		t.Errorf("site_ref should be float64(1), got %v (%T)", siteRef, siteRef)
-	}
-	_ = newMap
 }
 
-func TestAddMapDiffSanitizesExistingMultiobjectCustomFields(t *testing.T) {
+func TestCustomFieldNameCase(t *testing.T) {
 	t.Parallel()
-	newMapWithDiff := reflect.ValueOf(map[string]interface{}{
-		"source": "vcenter008",
-	})
-	existingMap := reflect.ValueOf(map[string]interface{}{
-		"source": "vcenter007",
-		"mdc_vlan": []interface{}{
-			map[string]interface{}{
-				"id":      float64(4),
-				"display": "InterXion",
-				"url":     "https://netbox/api/dcim/sites/4/",
-				"name":    "InterXion",
-			},
-			map[string]interface{}{
-				"id":      float64(2),
-				"display": "LCL",
-				"url":     "https://netbox/api/dcim/sites/2/",
-				"name":    "LCL",
-			},
-		},
-	})
-	diffMap := make(map[string]interface{})
-
-	err := addMapDiff(newMapWithDiff, existingMap, "custom_fields", true, diffMap)
-	if err != nil {
-		t.Fatalf("addMapDiff() error = %v", err)
-	}
-	cf, ok := diffMap["custom_fields"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected custom_fields in diffMap")
-	}
-	mdcVlan := cf["mdc_vlan"]
-	wantIDs := []interface{}{float64(4), float64(2)}
-	if !reflect.DeepEqual(mdcVlan, wantIDs) {
-		t.Errorf("mdc_vlan should be sanitized to IDs %v, got %v (%T)", wantIDs, mdcVlan, mdcVlan)
+	if Alphanumeric("Fond") != "fond" || Alphanumeric("fond") != "fond" {
+		t.Fatal("VMware field name normalization changed")
 	}
 }
